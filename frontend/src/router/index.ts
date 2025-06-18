@@ -104,6 +104,15 @@ const router = createRouter({
             },
         },
         {
+            path: '/tools/ai-assistant',
+            name: 'ai_assistant',
+            component: () => import('@/views/AIAssistantView.vue'),
+            meta: {
+                fullScreen: false,
+                requiresAuth: true,
+            },
+        },
+        {
             path: '/:pathMatch(.*)*',
             name: 'not-found',
             component: () => import('@/views/NotFoundView.vue'),

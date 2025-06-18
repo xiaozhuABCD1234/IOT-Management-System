@@ -11,6 +11,7 @@ import {
   Shell,
   Wrench,
   User,
+  Bot,
 } from "lucide-vue-next";
 import { useRoute } from "vue-router";
 import { useMenuStore } from "@/stores/useMenuStore";
@@ -119,6 +120,12 @@ const handleClose = (key: string, keyPath: string[]) => {
           <Calculator />
         </el-icon>
         <span>距离计算</span>
+      </el-menu-item>
+      <el-menu-item index="/tools/ai-assistant">
+        <el-icon>
+          <Bot />
+        </el-icon>
+        <span>AI助手</span>
       </el-menu-item>
     </el-sub-menu>
   </el-menu>

@@ -24,6 +24,7 @@ dnf==4.23.0
 fedora-third-party==0.10
 file-magic==0.4.0
 fros==1.1
+httpx>=0.26.0
 humanize==4.12.0
 idna==3.10
 iso639==0.1.4
