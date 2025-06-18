@@ -86,6 +86,15 @@ const router = createRouter({
             },
         },
         {
+            path: '/devops/logs',
+            name: 'devops_logs',
+            component: () => import('@/views/devops/LogsView.vue'),
+            meta: {
+                fullScreen: false,
+                requiresAuth: true,
+            },
+        },
+        {
             path: '/tools/distance',
             name: 'distance_tool',
             component: () => import('@/views/DistanceToolView.vue'),

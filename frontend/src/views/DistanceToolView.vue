@@ -23,6 +23,12 @@ interface Device {
   lon: number;
   updated?: number;
 }
+
+interface DevicePair {
+  a: Device;
+  b: Device;
+}
+
 interface Sensor {
   name: string;
   data?: {
@@ -39,9 +45,9 @@ const selectedIds = ref<Set<number>>(new Set([1, 2, 3]));
 const mqttClient = ref<mqtt.MqttClient | null>(null);
 
 // 计算设备配对
-const devicePairs = computed(() => {
+const devicePairs = computed<DevicePair[]>(() => {
   const ids = Array.from(selectedIds.value);
-  const pairs = [];
+  const pairs: DevicePair[] = [];
 
   for (let i = 0; i < ids.length; i++) {
     for (let j = i + 1; j < ids.length; j++) {

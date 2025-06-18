@@ -415,10 +415,25 @@ const drawMap = (p: p5) => {
 const drawFence = (p: p5) => {
   if (fencePoints.value.length < 2) return;
   
-  p.stroke('#ff6600');
-  p.strokeWeight(9);  // 围栏线条粗细增加到300%（原值3）
-  p.noFill();
+  // 先绘制半透明红色填充
+  if (fencePoints.value.length >= 3) {
+    p.beginShape();
+    fencePoints.value.forEach(point => {
+      p.vertex(point.x, point.y);
+    });
+    
+    if (props.drawingFence && currentFencePoint.value) {
+      // 如果正在绘制，连接到当前鼠标位置
+      p.vertex(currentFencePoint.value.x, currentFencePoint.value.y);
+    }
+    
+    // 设置红色半透明填充
+    p.fill(255, 0, 0, 50); // 红色，透明度20%
+    p.noStroke();
+    p.endShape(p.CLOSE);
+  }
   
+  // 再绘制围栏边框
   p.beginShape();
   fencePoints.value.forEach(point => {
     p.vertex(point.x, point.y);
@@ -427,9 +442,16 @@ const drawFence = (p: p5) => {
   if (props.drawingFence && currentFencePoint.value) {
     // 如果正在绘制，连接到当前鼠标位置
     p.vertex(currentFencePoint.value.x, currentFencePoint.value.y);
+  } 
+  
+  // 设置橙色边框
+  p.stroke('#ff6600');
+  p.strokeWeight(9);  // 围栏线条粗细增加到300%（原值3）
+  p.noFill();
+  if (props.drawingFence && currentFencePoint.value) {
+    p.endShape();  // 不闭合
   } else {
-    // 如果不是绘制模式，则闭合多边形
-    p.endShape(p.CLOSE);
+    p.endShape(p.CLOSE);  // 闭合
   }
   
   // 绘制围栏顶点

@@ -1,7 +1,23 @@
 <template>
   <div class="container">
-    <div class="distance-panel" v-if="showDistancePanel">
-      <h3>距离计算</h3>
+    <div 
+      class="distance-panel" 
+      v-if="showDistancePanel"
+      :style="{
+        left: `${distancePanelPosition.x}px`,
+        top: `${distancePanelPosition.y}px`,
+        transform: `scale(${distancePanelScale})`,
+        opacity: distancePanelDragging ? 0.8 : 1
+      }"
+    >
+      <div class="panel-header" @mousedown="startDistancePanelDrag">
+        <h3>距离计算</h3>
+        <div class="panel-controls">
+          <button class="panel-button" @click="scaleDistancePanel(-0.1)" title="缩小面板">-</button>
+          <button class="panel-button" @click="scaleDistancePanel(0.1)" title="放大面板">+</button>
+        </div>
+      </div>
+      
       <div class="distance-inputs">
         <div class="input-column">
           <label>选择设备1类型:</label>
@@ -44,51 +60,74 @@
       </div>
     </div>
     
-    <div class="controls" v-if="showControls">
-      <el-switch v-model="showFloorPlan" active-text="显示平面图-3" />
-      <el-switch v-model="showAnchors" active-text="显示基站" />
-      <el-switch v-model="showCoordinates" active-text="显示坐标" />
-      <el-switch v-model="showFence" active-text="显示围栏区域" />
-      <el-button 
-        type="primary" 
-        :class="{ 'active': drawingFence }"
-        @click="toggleFenceDrawing"
-      >
-        {{ drawingFence ? '完成围栏' : '绘制电子围栏' }}
-      </el-button>
-      <el-button 
-        type="danger"
-        @click="resetFence"
-        :disabled="!showFence"
-      >
-        清除围栏
-      </el-button>
-      <el-button 
-        type="info"
-        @click="resetMapView"
-        title="重置地图视图"
-      >
-        重置视图
-      </el-button>
-      <el-button 
-        type="success"
-        @click="toggleDistancePanel"
-      >
-        {{ showDistancePanel ? '隐藏距离计算' : '显示距离计算' }}
-      </el-button>
-      <el-button 
-        type="warning"
-        @click="showTagManagement = true"
-      >
-        标签管理
-      </el-button>
-      <el-button 
-        type="warning"
-        @click="showSafetyManagement = true"
-      >
-        安全距离管理
-      </el-button>
-      <div class="tip">提示: 点击"绘制电子围栏"按钮，然后在地图上点击添加围栏顶点，至少需要3个点</div>
+    <div 
+      class="controls" 
+      v-if="showControls"
+      :style="{
+        right: `${controlsPosition.x}px`,
+        top: `${controlsPosition.y}px`,
+        transform: `scale(${controlsScale})`,
+        opacity: controlsDragging ? 0.8 : 1
+      }"
+    >
+      <div class="panel-header" @mousedown="startControlsDrag">
+        <h3>控制面板</h3>
+        <div class="panel-controls">
+          <button class="panel-button" @click="scaleControlsPanel(-0.1)" title="缩小面板">-</button>
+          <button class="panel-button" @click="scaleControlsPanel(0.1)" title="放大面板">+</button>
+          <button class="panel-button" @click="toggleDraggable" title="锁定/解锁面板">
+            {{ isDraggable ? '🔓' : '🔒' }}
+          </button>
+          <button class="panel-button" @click="resetPanelsPosition" title="重置面板位置">↺</button>
+        </div>
+      </div>
+      
+      <div class="control-items">
+        <el-switch v-model="showFloorPlan" active-text="显示平面图-3" />
+        <el-switch v-model="showAnchors" active-text="显示基站" />
+        <el-switch v-model="showCoordinates" active-text="显示坐标" />
+        <el-switch v-model="showFence" active-text="显示围栏区域" />
+        <el-button 
+          type="primary" 
+          :class="{ 'active': drawingFence }"
+          @click="toggleFenceDrawing"
+        >
+          {{ drawingFence ? '完成围栏' : '绘制电子围栏' }}
+        </el-button>
+        <el-button 
+          type="danger"
+          @click="resetFence"
+          :disabled="!showFence"
+        >
+          清除围栏
+        </el-button>
+        <el-button 
+          type="info"
+          @click="resetMapView"
+          title="重置地图视图"
+        >
+          重置视图
+        </el-button>
+        <el-button 
+          type="success"
+          @click="toggleDistancePanel"
+        >
+          {{ showDistancePanel ? '隐藏距离计算' : '显示距离计算' }}
+        </el-button>
+        <el-button 
+          type="warning"
+          @click="showTagManagement = true"
+        >
+          标签管理
+        </el-button>
+        <el-button 
+          type="warning"
+          @click="showSafetyManagement = true"
+        >
+          安全距离管理
+        </el-button>
+        <div class="tip">提示: 点击"绘制电子围栏"按钮，然后在地图上点击添加围栏顶点，至少需要3个点</div>
+      </div>
     </div>
 
     <el-dialog
@@ -550,7 +589,139 @@ const handleFenceViolation = (deviceId: string) => {
 
 watch([selectedTag1, selectedTag2, points, selectedSafetyDistance], calculateDistance, { deep: true });
 
+// 新增: 面板拖动和缩放相关状态
+const distancePanelDragging = ref(false);
+const controlsDragging = ref(false);
+const distancePanelPosition = ref({ x: 20, y: 20 });
+const controlsPosition = ref({ x: 10, y: 10 });
+const distancePanelScale = ref(1);
+const controlsScale = ref(1);
+const isDraggable = ref(true);
+
+// 存储面板位置的localStorage键
+const DISTANCE_PANEL_POS_KEY = 'uwb-distance-panel-pos';
+const CONTROLS_PANEL_POS_KEY = 'uwb-controls-panel-pos';
+const DISTANCE_PANEL_SCALE_KEY = 'uwb-distance-panel-scale';
+const CONTROLS_PANEL_SCALE_KEY = 'uwb-controls-panel-scale';
+
+// 加载保存的位置和缩放比例
+const loadSavedPanelSettings = () => {
+  try {
+    const savedDistancePos = localStorage.getItem(DISTANCE_PANEL_POS_KEY);
+    if (savedDistancePos) {
+      distancePanelPosition.value = JSON.parse(savedDistancePos);
+    }
+    
+    const savedControlsPos = localStorage.getItem(CONTROLS_PANEL_POS_KEY);
+    if (savedControlsPos) {
+      controlsPosition.value = JSON.parse(savedControlsPos);
+    }
+    
+    const savedDistanceScale = localStorage.getItem(DISTANCE_PANEL_SCALE_KEY);
+    if (savedDistanceScale) {
+      distancePanelScale.value = parseFloat(savedDistanceScale);
+    }
+    
+    const savedControlsScale = localStorage.getItem(CONTROLS_PANEL_SCALE_KEY);
+    if (savedControlsScale) {
+      controlsScale.value = parseFloat(savedControlsScale);
+    }
+  } catch (e) {
+    console.error('Error loading panel settings', e);
+  }
+};
+
+// 保存面板位置和缩放比例
+const savePanelSettings = () => {
+  localStorage.setItem(DISTANCE_PANEL_POS_KEY, JSON.stringify(distancePanelPosition.value));
+  localStorage.setItem(CONTROLS_PANEL_POS_KEY, JSON.stringify(controlsPosition.value));
+  localStorage.setItem(DISTANCE_PANEL_SCALE_KEY, distancePanelScale.value.toString());
+  localStorage.setItem(CONTROLS_PANEL_SCALE_KEY, controlsScale.value.toString());
+};
+
+// 处理距离面板的拖动
+const startDistancePanelDrag = (e: MouseEvent) => {
+  if (!isDraggable.value) return;
+  distancePanelDragging.value = true;
+  document.addEventListener('mousemove', moveDistancePanel);
+  document.addEventListener('mouseup', stopDistancePanelDrag);
+  e.preventDefault();
+};
+
+const moveDistancePanel = (e: MouseEvent) => {
+  if (!distancePanelDragging.value) return;
+  distancePanelPosition.value = {
+    x: distancePanelPosition.value.x + e.movementX,
+    y: distancePanelPosition.value.y + e.movementY
+  };
+};
+
+const stopDistancePanelDrag = () => {
+  distancePanelDragging.value = false;
+  document.removeEventListener('mousemove', moveDistancePanel);
+  document.removeEventListener('mouseup', stopDistancePanelDrag);
+  savePanelSettings();
+};
+
+// 处理控制面板的拖动
+const startControlsDrag = (e: MouseEvent) => {
+  if (!isDraggable.value) return;
+  controlsDragging.value = true;
+  document.addEventListener('mousemove', moveControls);
+  document.addEventListener('mouseup', stopControlsDrag);
+  e.preventDefault();
+};
+
+const moveControls = (e: MouseEvent) => {
+  if (!controlsDragging.value) return;
+  
+  // 修正控制面板的拖动方向
+  // 由于控制面板是相对于右侧定位的，所以向左拖动（负的movementX）应该减少right值
+  // 向右拖动（正的movementX）应该增加right值
+  controlsPosition.value = {
+    x: controlsPosition.value.x - e.movementX, // 反转X方向移动
+    y: controlsPosition.value.y + e.movementY  // Y方向保持不变
+  };
+};
+
+const stopControlsDrag = () => {
+  controlsDragging.value = false;
+  document.removeEventListener('mousemove', moveControls);
+  document.removeEventListener('mouseup', stopControlsDrag);
+  savePanelSettings();
+};
+
+// 面板缩放功能
+const scaleDistancePanel = (delta: number) => {
+  // 以0.1为步长，限制在0.6到1.2之间
+  distancePanelScale.value = Math.max(0.6, Math.min(1.2, distancePanelScale.value + delta));
+  savePanelSettings();
+};
+
+const scaleControlsPanel = (delta: number) => {
+  // 以0.1为步长，限制在0.6到1.2之间
+  controlsScale.value = Math.max(0.6, Math.min(1.2, controlsScale.value + delta));
+  savePanelSettings();
+};
+
+// 切换拖动功能
+const toggleDraggable = () => {
+  isDraggable.value = !isDraggable.value;
+};
+
+// 重置面板位置和缩放
+const resetPanelsPosition = () => {
+  distancePanelPosition.value = { x: 20, y: 20 };
+  controlsPosition.value = { x: 10, y: 10 };
+  distancePanelScale.value = 1;
+  controlsScale.value = 1;
+  savePanelSettings();
+};
+
 onMounted(() => {
+  // 加载保存的面板位置和缩放设置
+  loadSavedPanelSettings();
+  
   // 连接MQTT
   client = mqtt.connect(mqttConfig.url, mqttConfig.options);
   client.on("connect", () => {
@@ -649,24 +820,58 @@ onUnmounted(() => {
   position: relative;
 }
 
-/* 恢复原始的距离计算面板样式 */
-.distance-panel {
-  position: absolute;
-  top: 20px;
-  left: 20px;
-  background: rgba(255, 255, 255, 0.9); /* 增加不透明度，与控制面板一致 */
-  padding: 15px;
-  border-radius: 8px; /* 与控制面板一致 */
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1); /* 与控制面板一致 */
-  z-index: 1000;
-  width: 360px; /* 原来是450px，缩小到80%为360px */
+/* 面板拖动样式 */
+.panel-header {
+  cursor: move;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e8e8e8;
 }
 
-.distance-panel h3 {
-  margin-top: 0;
-  margin-bottom: 12px;
+.panel-header h3 {
+  margin: 0;
+  font-size: 1em;
   color: #333;
-  font-size: 1em; /* 稍微缩小标题 */
+}
+
+.panel-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.panel-button {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: #f0f0f0;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  padding: 0;
+}
+
+.panel-button:hover {
+  background: #e0e0e0;
+}
+
+/* 距离计算面板样式 */
+.distance-panel {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  width: 360px;
+  transform-origin: top left;
+  transition: opacity 0.2s;
+  border: 1px solid #e0e0e0;
 }
 
 .distance-inputs {
@@ -678,60 +883,65 @@ onUnmounted(() => {
 .input-column {
   display: flex;
   flex-direction: column;
-  width: 47%; /* 稍微调整，确保两列之间有足够间距 */
+  width: 47%;
 }
 
 .input-column label {
   margin-bottom: 5px;
-  font-size: 0.85em; /* 稍微缩小字体 */
+  font-size: 0.85em;
   color: #555;
 }
 
 .input-column .el-select {
   width: 100%;
-  font-size: 0.9em; /* 稍微缩小字体 */
+  font-size: 0.9em;
 }
 
 .distance-panel .result div {
   margin-bottom: 5px;
-  font-size: 0.85em; /* 稍微缩小字体 */
+  font-size: 0.85em;
   color: #333;
 }
 
+/* 控制面板样式 */
 .controls {
   position: absolute;
-  top: 10px;
-  right: 10px;
   z-index: 10;
-  background: rgba(255, 255, 255, 0.9); /* 增加不透明度，提高可读性 */
-  padding: 15px; /* 增加内边距，让内容更宽松 */
-  border-radius: 8px; /* 增大圆角，更现代化 */
-  display: flex;
-  flex-direction: column;
-  gap: 12px; /* 增加间距，提高可读性 */
-  width: 190px; /* 固定宽度，使所有开关对齐 */
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1); /* 添加阴影，增强层次感 */
+  background: rgba(255, 255, 255, 0.95);
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  transform-origin: top right;
+  transition: opacity 0.2s;
+  border: 1px solid #e0e0e0;
 }
 
-/* 添加开关样式，使其更突出 */
-.controls :deep(.el-switch) {
-  transform: scale(1.1); /* 稍微放大开关 */
+.control-items {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 190px;
+}
+
+/* 控制面板中的开关样式 */
+.control-items :deep(.el-switch) {
+  transform: scale(1.1);
 }
 
 /* 改善开关文字样式 */
-.controls :deep(.el-switch__label) {
-  font-size: 14px; /* 增大字体 */
-  font-weight: 500; /* 加粗字体 */
-  color: #333; /* 更深的文字颜色 */
+.control-items :deep(.el-switch__label) {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
 }
 
-/* 提示文字样式优化 */
+/* 提示文字样式 */
 .tip {
-  font-size: 13px; /* 稍微增大字体 */
-  color: #606266; /* 更明显的颜色 */
+  font-size: 13px;
+  color: #606266;
   margin-top: 10px;
   text-align: center;
-  line-height: 1.4; /* 增加行高，提高可读性 */
+  line-height: 1.4;
 }
 
 .active {

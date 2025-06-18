@@ -92,7 +92,7 @@ const handleClose = (key: string, keyPath: string[]) => {
         <el-icon>
           <Shell />
         </el-icon>
-        <span>日志</span>
+        <span>MQTT日志</span>
       </el-menu-item>
       <el-menu-item index="/devops/tag-admin">
         <el-icon>
