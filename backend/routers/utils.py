@@ -30,7 +30,15 @@ async def proxy_deepseek_api(request: Request):
         api_key = os.environ.get("DEEPSEEK_API_KEY", "sk-bec0a15f8ede4672a6869bc4b1e4e9c5")
         
         # 设置DeepSeek API的URL
-        deepseek_url = "https://api.deepseek.com/v1/chat/completions"
+        model = data.get('model', 'deepseek-r1')
+        
+        # 根据模型选择合适的API端点
+        if model.startswith('deepseek-r1'):
+            deepseek_url = "https://api.deepseek.com/v1/chat/completions"
+        else:
+            deepseek_url = "https://api.deepseek.com/v1/chat/completions"
+            
+        logger.info(f"使用API端点: {deepseek_url}, 模型: {model}")
         
         # 使用httpx进行API请求
         async with httpx.AsyncClient(timeout=60.0) as client:

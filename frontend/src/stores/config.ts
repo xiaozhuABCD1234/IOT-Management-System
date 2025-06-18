@@ -22,6 +22,12 @@ export const useConfigStore = defineStore('config', () => {
     const serverUrl = ref('');       // 后端服务器地址
     const serverPort = ref('8000');  // 后端服务器端口，默认值为空
 
+    // ================= DeepSeek AI 配置 ================= //
+    const deepseekApiKey =
+        ref('sk-bec0a15f8ede4672a6869bc4b1e4e9c5');  // DeepSeek API密钥
+    const deepseekModel = ref('deepseek-r1');        // 默认模型
+    const deepseekBeta = ref(false);                 // 是否使用Beta功能
+
     // ================= 计算属性 ================= //
     const effectiveWSUrl = computed(() => {
         if (serverUrl.value) {
@@ -76,5 +82,10 @@ export const useConfigStore = defineStore('config', () => {
         serverPort,
         effectiveWSUrl,
         effectiveHttpUrl,
+
+        // DeepSeek AI 配置项
+        deepseekApiKey,
+        deepseekModel,
+        deepseekBeta,
     };
 });

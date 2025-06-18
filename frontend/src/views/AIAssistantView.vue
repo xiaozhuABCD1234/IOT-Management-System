@@ -10,11 +10,25 @@
           show-icon
         />
       </div>
+      
+      <!-- 模型选择 -->
+      <div class="model-selector">
+        <span class="model-label">选择模型:</span>
+        <el-select v-model="selectedModel" size="small" style="width: 200px">
+          <el-option label="DeepSeek R1" value="deepseek-r1" />
+          <el-option label="DeepSeek R1 Lite" value="deepseek-r1-lite" />
+        </el-select>
+        <span class="model-description">{{ modelDescription }}</span>
+      </div>
     </div>
     
     <div class="chat-container" ref="chatContainerRef">
       <div v-if="messages.length === 0" class="empty-chat">
         <el-empty description="开始一段新的对话">
+          <div class="model-info">
+            <h3>当前使用模型: {{ selectedModel }}</h3>
+            <p>{{ modelDescription }}</p>
+          </div>
           <el-button type="primary" @click="focusInput">开始聊天</el-button>
         </el-empty>
       </div>
@@ -84,7 +98,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue';
+import { ref, onMounted, nextTick, computed } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import axios from 'axios';
 import { marked } from 'marked';
@@ -110,6 +124,19 @@ const userInput = ref('');
 const isLoading = ref(false);
 const chatContainerRef = ref<HTMLElement | null>(null);
 const inputRef = ref<HTMLElement | null>(null);
+const selectedModel = ref('deepseek-r1');
+
+// 模型描述
+const modelDescription = computed(() => {
+  switch (selectedModel.value) {
+    case 'deepseek-r1':
+      return 'DeepSeek R1是一个强大的推理模型，擅长逻辑思维和复杂问题解决';
+    case 'deepseek-r1-lite':
+      return 'DeepSeek R1 Lite是R1的轻量版本，响应更快，适合一般对话场景';
+    default:
+      return '选择一个模型开始对话';
+  }
+});
 
 // 格式化消息，支持Markdown
 const formatMessage = (content: string): string => {
@@ -132,7 +159,7 @@ const sendMessage = async () => {
   scrollToBottom();
   
   const requestData = {
-    model: 'deepseek-chat',
+    model: selectedModel.value,
     messages: [
       {
         role: 'system',
@@ -289,6 +316,7 @@ onMounted(() => {
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 20px;
+  background-color: #f9fafc;
 }
 
 .chat-header {
@@ -304,6 +332,39 @@ onMounted(() => {
 
 .api-notice {
   margin-top: 8px;
+}
+
+.model-selector {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.model-label {
+  font-size: 14px;
+  color: #606266;
+}
+
+.model-description {
+  font-size: 13px;
+  color: #909399;
+  font-style: italic;
+}
+
+.model-info {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.model-info h3 {
+  margin: 0 0 8px;
+  color: #409eff;
+}
+
+.model-info p {
+  margin: 0;
+  color: #606266;
 }
 
 .powered-by {
@@ -350,9 +411,10 @@ onMounted(() => {
 .message-content {
   background-color: #f5f7fa;
   padding: 12px 16px;
-  border-radius: 8px;
+  border-radius: 12px;
   max-width: 80%;
   line-height: 1.5;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
 .user-message .message-content {
@@ -361,7 +423,7 @@ onMounted(() => {
 
 .message-role {
   font-weight: bold;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
   font-size: 14px;
   color: #409eff;
 }
@@ -423,8 +485,11 @@ onMounted(() => {
 
 .chat-input {
   border-top: 1px solid #eaeaea;
-  padding-top: 20px;
+  padding: 20px;
   margin-bottom: 20px;
+  background-color: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.1);
 }
 
 .input-actions {

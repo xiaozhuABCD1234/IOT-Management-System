@@ -174,6 +174,7 @@
       :floorPlanSvg="floorPlanSvg"
       :drawingFence="drawingFence"
       :showFence="showFence"
+      :fenceToggleDelay="fenceToggleDelay"
       @fenceComplete="handleFenceComplete"
       @fenceViolation="handleFenceViolation"
       style="width: 100%; height: 100%; min-height: 98vh;"
@@ -325,14 +326,24 @@ const handleMessage = (payload: Buffer) => {
     if (typeof indoor !== "undefined") {
       const prevIndoor = prevIndoorStates.value.get(id);
 
-      // 状态变化通知
+      // 状态变化通知，使用节流防止频繁通知
       if (prevIndoor !== undefined && prevIndoor !== indoor) {
-        ElNotification({
-          title: "状态变化",
-          message: `设备 ${id} ${indoor ? "进入" : "离开"}室内`,
-          type: "info",
-          duration: 3000,
-        });
+        const deviceKey = `status-${id}`;
+        const now = Date.now();
+        const lastAlertTime = lastFenceAlerts.value.get(deviceKey) || 0;
+        
+        // 如果距离上次提醒不足500毫秒，则不显示提醒
+        if (now - lastAlertTime >= 500) {
+          // 更新最后提醒时间
+          lastFenceAlerts.value.set(deviceKey, now);
+          
+          ElNotification({
+            title: "状态变化",
+            message: `设备 ${id} ${indoor ? "进入" : "离开"}室内`,
+            type: "info",
+            duration: 3000,
+          });
+        }
       }
 
       // 离开室内时清除轨迹
@@ -442,7 +453,36 @@ const filterTags2 = () => {
   calculateDistance();
 };
 
+// 添加节流函数
+const throttle = (fn: Function, delay: number) => {
+  let lastTime = 0;
+  return function(this: any, ...args: any[]) {
+    const now = Date.now();
+    if (now - lastTime >= delay) {
+      fn.apply(this, args);
+      lastTime = now;
+    }
+  };
+};
+
+// 处理围栏违规事件
+const lastFenceAlerts = ref(new Map<string, number>());
+
+const handleFenceViolation = (deviceId: string) => {
+  // 设备在围栏内的通知
+  ElNotification({
+    title: "围栏警告",
+    message: `设备 ${deviceId} 已进入电子围栏范围`,
+    type: "error", // 使用红色错误提示
+    duration: 3000,
+  });
+  
+  console.log(`围栏警告: 设备 ${deviceId} 在围栏内, 时间: ${new Date().toLocaleTimeString()}`);
+};
+
 // 计算两个标签点之间的距离
+const lastDistanceAlerts = ref(new Map<string, number>());
+
 const calculateDistance = () => {
   console.log('calculateDistance triggered');
   console.log('selectedTag1:', selectedTag1.value);
@@ -472,12 +512,25 @@ const calculateDistance = () => {
       safetyAlertMessage.value = null;
     } else if (selectedSafetyDistance.value !== null) {
       safetyAlertMessage.value = `距离 (${dist.toFixed(2)} cm) 超过安全距离 (${selectedSafetyDistance.value} cm)!`;
-      ElNotification({
-        title: "安全距离警告",
-        message: `设备 ${selectedTag1.value} 与设备 ${selectedTag2.value} 距离 (${dist.toFixed(2)} cm) 超过安全距离 (${selectedSafetyDistance.value} cm)!`,
-        type: "warning",
-        duration: 5000,
-      });
+      
+      // 创建唯一键，用于跟踪特定设备对之间的距离警告
+      const devicePairKey = `${selectedTag1.value}-${selectedTag2.value}`;
+      const now = Date.now();
+      const lastAlertTime = lastDistanceAlerts.value.get(devicePairKey) || 0;
+      
+      // 如果距离上次提醒不足500毫秒，则不显示提醒
+      if (now - lastAlertTime >= 500) {
+        // 更新最后提醒时间
+        lastDistanceAlerts.value.set(devicePairKey, now);
+        
+        // 显示提醒
+        ElNotification({
+          title: "安全距离警告",
+          message: `设备 ${selectedTag1.value} 与设备 ${selectedTag2.value} 距离 (${dist.toFixed(2)} cm) 超过安全距离 (${selectedSafetyDistance.value} cm)!`,
+          type: "warning",
+          duration: 5000,
+        });
+      }
     }
   } else {
     distance.value = '--';
@@ -514,8 +567,17 @@ const handleSafetyManagementClose = () => {
   }
 };
 
+// 添加延迟标志变量，防止立即添加围栏点
+const fenceToggleDelay = ref(false);
+
 // 切换围栏绘制模式
 const toggleFenceDrawing = () => {
+  // 设置延迟标志，防止点击按钮添加围栏点
+  fenceToggleDelay.value = true;
+  setTimeout(() => {
+    fenceToggleDelay.value = false;
+  }, 500);
+  
   if (drawingFence.value) {
     // 如果当前正在绘制围栏，点击按钮表示完成围栏
     drawingFence.value = false;
@@ -575,16 +637,6 @@ const handleFenceComplete = (coordinates: {x: number, y: number}[]) => {
   console.log("围栏坐标:", JSON.stringify(coordinates));
   
   // 不再重复显示通知，因为在toggleFenceDrawing中已经处理
-};
-
-// 处理围栏违规事件
-const handleFenceViolation = (deviceId: string) => {
-  ElNotification({
-    title: "围栏警告",
-    message: `设备 ${deviceId} 已超出电子围栏范围`,
-    type: "warning",
-    duration: 5000,
-  });
 };
 
 watch([selectedTag1, selectedTag2, points, selectedSafetyDistance], calculateDistance, { deep: true });

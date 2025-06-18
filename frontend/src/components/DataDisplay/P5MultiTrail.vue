@@ -115,6 +115,10 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  fenceToggleDelay: {
+    type: Boolean,
+    default: false
+  }
 });
 
 const emit = defineEmits<{
@@ -140,6 +144,7 @@ const viewState = reactive({
 const fencePoints = ref<FencePoint[]>([]);
 const currentFencePoint = ref<FencePoint | null>(null);
 const isDrawingFence = ref(false);
+const lastClickTime = ref(0); // 添加跟踪上次点击时间的变量
 
 // 添加地图布局数据
 const mapLayout = {
@@ -173,6 +178,9 @@ const mapLayout = {
   greenAreas: [],
   doors: []
 };
+
+// 添加用于接收父组件传递的延迟标志
+const fenceToggleDelay = ref(false);
 
 // 极简版本的sketch函数，去除所有复杂功能
 const sketch = (p: p5) => {
@@ -275,7 +283,17 @@ const sketch = (p: p5) => {
     // 任一区域都视为控制区域
     const inControlArea = inRightControlArea || inLeftControlArea || inTopArea || inBottomArea;
     
-    if (props.drawingFence && isDrawingFence.value && !inControlArea) { // 确保不在控制区域内
+    const now = Date.now();
+    const timeSinceLastClick = now - lastClickTime.value;
+    lastClickTime.value = now;
+    
+    // 检查父组件传递的延迟标志
+    if (props.fenceToggleDelay) {
+      return; // 如果父组件设置了延迟标志，不进行任何处理
+    }
+    
+    // 如果是绘制模式，并且不在控制区域内，将时间阈值降低到100毫秒
+    if (props.drawingFence && isDrawingFence.value && !inControlArea && timeSinceLastClick > 100) {
       // 获取鼠标在画布上的位置
       const mapWidth = 1800;
       const mapHeight = 2200;
@@ -489,15 +507,28 @@ const isPointInPolygon = (point: {x: number, y: number}, polygon: FencePoint[]):
 };
 
 // 检查设备是否违反围栏规则
+const lastViolationTime = ref(new Map<string, number>());
+const debugMode = ref(false); // 关闭调试模式
+
 const checkFenceViolation = () => {
   if (!props.showFence || fencePoints.value.length < 3) return;
   
+  const now = Date.now();
+  
   props.points.forEach(point => {
     const isInside = isPointInPolygon({x: point.x, y: point.y}, fencePoints.value);
+    const deviceId = String(point.id);
     
-    // 如果设备不在围栏内，触发违规事件
-    if (!isInside) {
-      emit("fenceViolation", String(point.id));
+    // 只有在围栏范围内才发送提示
+    if (isInside) {
+      const lastTime = lastViolationTime.value.get(deviceId) || 0;
+      
+      // 确保每1秒最多触发一次同一设备的事件
+      if (now - lastTime >= 1000) {
+        lastViolationTime.value.set(deviceId, now);
+        emit("fenceViolation", deviceId);
+        console.log(`围栏提示: 设备 ${deviceId} 在围栏内, 时间: ${new Date().toLocaleTimeString()}`);
+      }
     }
   });
 };
@@ -680,9 +711,13 @@ watch(() => props.drawingFence, (newVal, oldVal) => {
     // 开始绘制围栏
     isDrawingFence.value = true;
     if (!oldVal) { // 只有从false变为true时才清空围栏点
+      // 清空之前的围栏点，但不立即添加新点
       fencePoints.value = []; // 清空之前的围栏点
     }
     currentFencePoint.value = null;
+    
+    // 重置点击时间，确保有足够时间过渡到绘制模式
+    lastClickTime.value = Date.now();
   } else if (isDrawingFence.value) {
     // 结束绘制围栏
     isDrawingFence.value = false;
@@ -702,8 +737,16 @@ watch(() => props.points, () => {
   checkFenceViolation();
 }, { deep: true });
 
+// 添加定时器，确保每1000毫秒检查一次围栏违规
+let fenceViolationTimer: number | null = null;
+
 onMounted(() => {
   window.addEventListener('resize', handleResize);
+  
+  // 设置定时器，每1000毫秒检查一次围栏违规
+  fenceViolationTimer = window.setInterval(() => {
+    checkFenceViolation();
+  }, 1000);
   
   // 确保DOM元素已经渲染完成
   nextTick(() => {
@@ -719,6 +762,12 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
+  
+  // 清除定时器
+  if (fenceViolationTimer !== null) {
+    window.clearInterval(fenceViolationTimer);
+  }
+  
   if (p5Instance) {
     p5Instance.remove();
     p5Instance = null;
