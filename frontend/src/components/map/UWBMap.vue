@@ -507,11 +507,11 @@ const calculateDistance = () => {
     const dist = Math.sqrt(dx * dx + dy * dy);
     distance.value = dist.toFixed(2);
 
-    // 比较安全距离
-    if (selectedSafetyDistance.value !== null && dist < selectedSafetyDistance.value) {
+    // 比较安全距离 - 修改逻辑：当距离小于安全距离时触发警告
+    if (selectedSafetyDistance.value !== null && dist > selectedSafetyDistance.value) {
       safetyAlertMessage.value = null;
     } else if (selectedSafetyDistance.value !== null) {
-      safetyAlertMessage.value = `距离 (${dist.toFixed(2)} cm) 超过安全距离 (${selectedSafetyDistance.value} cm)!`;
+      safetyAlertMessage.value = `距离 (${dist.toFixed(2)} cm) 小于安全距离 (${selectedSafetyDistance.value} cm)!`;
       
       // 创建唯一键，用于跟踪特定设备对之间的距离警告
       const devicePairKey = `${selectedTag1.value}-${selectedTag2.value}`;
@@ -526,7 +526,7 @@ const calculateDistance = () => {
         // 显示提醒
         ElNotification({
           title: "安全距离警告",
-          message: `设备 ${selectedTag1.value} 与设备 ${selectedTag2.value} 距离 (${dist.toFixed(2)} cm) 超过安全距离 (${selectedSafetyDistance.value} cm)!`,
+          message: `设备 ${selectedTag1.value} 与设备 ${selectedTag2.value} 距离 (${dist.toFixed(2)} cm) 小于安全距离 (${selectedSafetyDistance.value} cm)!`,
           type: "warning",
           duration: 5000,
         });
