@@ -41,6 +41,7 @@ let AMap: any = null; // Store AMap instance
 let mouseTool: any = null; // Store MouseTool instance
 const devices = ref<Device[]>([]);
 let mqttClient: mqtt.MqttClient | null = null;
+const prevIndoorStates = ref(new Map<number, boolean>()); // Store previous indoor states
 
 // 围栏相关状态
 const drawingFence = ref(false);
@@ -63,14 +64,44 @@ const MQTT_CONFIG = {
 
 // 解析MQTT消息
 const parseMessage = (topic: string, payload: Buffer) => {
-  const data = JSON.parse(payload.toString());
-  const id = data.id;
-  const sensors = data.sensors;
-  return {
-    id,
-    lng: sensors[0].data.value[0],
-    lat: sensors[0].data.value[1],
-  };
+  try {
+    const data = JSON.parse(payload.toString());
+    const { id, indoor, sensors } = data;
+    
+    console.log(`MonitorMap: 解析设备 ${id} 的消息，indoor=${indoor}`);
+    
+    // 只处理室外设备 (indoor为false)
+    // 如果设备是室内设备 (indoor为true)，直接返回null，不在地图上显示
+    if (indoor !== false) {
+      console.log(`MonitorMap: 设备 ${id} 不是室外设备 (indoor=${indoor})，不处理`);
+      return null;
+    }
+    
+    // 查找RTK传感器数据
+    const rtk = sensors?.find((s: any) => s.name === "RTK");
+    if (!rtk?.data?.value || rtk.data.value.length !== 2) {
+      console.log(`MonitorMap: 设备 ${id} 没有有效的RTK数据，不处理`);
+      return null;
+    }
+    
+    // 检查坐标是否为[0, 0]，如果是则忽略
+    const [lng, lat] = rtk.data.value;
+    if (lng === 0 && lat === 0) {
+      console.log(`MonitorMap: 设备 ${id} 的RTK数据为[0, 0]，忽略显示`);
+      return null;
+    }
+    
+    console.log(`MonitorMap: 设备 ${id} 符合显示条件，返回位置数据`);
+    return {
+      id,
+      lng,
+      lat,
+      indoor
+    };
+  } catch (e) {
+    console.warn("Invalid message format:", e);
+    return null;
+  }
 };
 
 // 创建设备地图元素
@@ -131,9 +162,50 @@ const checkFenceViolation = (deviceId: number, lng: number, lat: number) => {
 // 更新设备位置
 const updateDevicePosition = (
   AMapInstance: any,
-  msg: { id: number; lng: number; lat: number },
+  msg: { id: number; lng: number; lat: number; indoor: boolean },
 ) => {
+  console.log(`MonitorMap: 接收到设备 ${msg.id} 的位置更新，indoor=${msg.indoor}`);
+  
+  // 首先检查 - 如果是室内设备，直接跳过或移除
+  if (msg.indoor === true) {
+    console.log(`MonitorMap: 设备 ${msg.id} 是室内设备，从地图移除`);
+    const deviceToRemove = devices.value.find((d) => d.id === msg.id);
+    if (deviceToRemove) {
+      // 从地图上移除设备标记和轨迹
+      console.log(`MonitorMap: 从地图移除设备 ${msg.id} 的标记和轨迹`);
+      map.remove([deviceToRemove.polyline, deviceToRemove.marker]);
+      devices.value = devices.value.filter((d) => d.id !== msg.id);
+    }
+    
+    // 处理室内状态变化通知
+    const prevIndoor = prevIndoorStates.value.get(msg.id);
+    if (prevIndoor !== undefined && prevIndoor !== msg.indoor) {
+      console.log(`MonitorMap: 设备 ${msg.id} 状态从室外变为室内`);
+      ElNotification({
+        title: "状态变化",
+        message: `设备 ${msg.id} 进入室内`,
+        type: "info",
+        duration: 3000,
+      });
+    }
+    prevIndoorStates.value.set(msg.id, msg.indoor);
+    return;
+  }
+  
   let device = devices.value.find((d) => d.id === msg.id);
+
+  // 处理室外状态变化通知
+  const prevIndoor = prevIndoorStates.value.get(msg.id);
+  if (prevIndoor !== undefined && prevIndoor !== msg.indoor) {
+    console.log(`MonitorMap: 设备 ${msg.id} 状态从室内变为室外`);
+    ElNotification({
+      title: "状态变化",
+      message: `设备 ${msg.id} 进入室外`,
+      type: "info",
+      duration: 3000,
+    });
+  }
+  prevIndoorStates.value.set(msg.id, msg.indoor);
 
   // 转换坐标系 (WGS84 -> GCJ02)
   const gcjCoord = gcoord.transform([msg.lng, msg.lat], gcoord.WGS84, gcoord.GCJ02);
@@ -141,9 +213,11 @@ const updateDevicePosition = (
   const gcjLat = gcjCoord[1];
 
   if (!device) {
+    console.log(`MonitorMap: 创建新的室外设备 ${msg.id} 标记`);
     device = createDevice(AMapInstance, msg.id, gcjLng, gcjLat);
     devices.value.push(device);
   } else {
+    console.log(`MonitorMap: 更新现有室外设备 ${msg.id} 的位置`);
     const newPath = [
       ...device.path,
       [gcjLng, gcjLat] as [number, number],
@@ -382,6 +456,36 @@ watch(showFence, (newVal) => {
   });
 });
 
+// 移除所有室内设备
+const removeAllIndoorDevices = () => {
+  console.log('MonitorMap: 检查并移除所有室内设备');
+  const devicesToRemove: Device[] = [];
+  
+  for (const device of devices.value) {
+    const isIndoor = prevIndoorStates.value.get(device.id) === true;
+    if (isIndoor) {
+      console.log(`MonitorMap: 移除室内设备 ${device.id}`);
+      devicesToRemove.push(device);
+    }
+  }
+  
+  // 从地图上移除设备
+  for (const device of devicesToRemove) {
+    try {
+      map.remove([device.polyline, device.marker]);
+    } catch (e) {
+      console.warn(`MonitorMap: 移除设备 ${device.id} 失败:`, e);
+    }
+  }
+  
+  // 从设备列表中删除
+  if (devicesToRemove.length > 0) {
+    const idsToRemove = devicesToRemove.map(d => d.id);
+    devices.value = devices.value.filter(d => !idsToRemove.includes(d.id));
+    console.log(`MonitorMap: 已移除 ${devicesToRemove.length} 个室内设备`);
+  }
+};
+
 onMounted(async () => {
   window._AMapSecurityConfig = {
     securityJsCode: ConfigStore.securityJsCode,
@@ -455,6 +559,9 @@ onMounted(async () => {
           console.log('MonitorMap: Cleaning up orphaned mouseTool');
           resetDrawingState();
         }
+        
+        // 移除所有室内设备
+        removeAllIndoorDevices();
       }, 500);
     });
     
@@ -475,12 +582,55 @@ onMounted(async () => {
     mqttClient = mqtt.connect(MQTT_CONFIG.url, MQTT_CONFIG.options);
 
     mqttClient.on("connect", () => {
+      console.log("MonitorMap: 已连接到MQTT服务器");
       mqttClient!.subscribe(MQTT_CONFIG.topic);
+      console.log(`MonitorMap: 已订阅主题 ${MQTT_CONFIG.topic}`);
     });
 
     mqttClient.on("message", (topic, payload) => {
+      console.log(`MonitorMap: 收到MQTT消息，主题: ${topic}, 正在解析...`);
+      try {
+        // 预览消息内容
+        const previewData = JSON.parse(payload.toString());
+        console.log(`MonitorMap: 收到设备 ${previewData.id} 的消息，indoor=${previewData.indoor}`);
+        
+        // 检查是否是室内设备，如果是，确保从地图上移除
+        if (previewData.indoor === true) {
+          const deviceId = previewData.id;
+          console.log(`MonitorMap: 原始消息显示设备 ${deviceId} 是室内设备，检查是否需要移除`);
+          
+          const deviceToRemove = devices.value.find(d => d.id === deviceId);
+          if (deviceToRemove) {
+            console.log(`MonitorMap: 从地图移除室内设备 ${deviceId}`);
+            // 移除设备标记和轨迹
+            map.remove([deviceToRemove.polyline, deviceToRemove.marker]);
+            devices.value = devices.value.filter(d => d.id !== deviceId);
+            
+            // 设置设备状态
+            const prevIndoor = prevIndoorStates.value.get(deviceId);
+            if (prevIndoor !== undefined && prevIndoor !== true) {
+              // 状态变化通知
+              ElNotification({
+                title: "状态变化",
+                message: `设备 ${deviceId} 进入室内`,
+                type: "info",
+                duration: 3000,
+              });
+            }
+            prevIndoorStates.value.set(deviceId, true);
+          }
+        }
+      } catch (e) {
+        console.warn(`MonitorMap: MQTT消息预览解析失败`, e);
+      }
+      
       const msg = parseMessage(topic, payload);
-      updateDevicePosition(AMap, msg);
+      if (msg) {
+        console.log(`MonitorMap: 消息解析成功，更新设备 ${msg.id} 位置`);
+        updateDevicePosition(AMap, msg);
+      } else {
+        console.log(`MonitorMap: 消息解析结果为null，不更新设备位置`);
+      }
     });
   }).catch(console.error);
 });
@@ -671,3 +821,4 @@ defineExpose<ExposedMonitorMap>({
   border: 2px solid white;
 }
 </style>
+

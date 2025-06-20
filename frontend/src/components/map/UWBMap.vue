@@ -346,69 +346,82 @@ const handleMessage = (payload: Buffer) => {
         }
       }
 
-      // 离开室内时清除轨迹
-      if (!indoor) {
-        points.value = points.value.filter((p) => p.id !== id);
-      }
-
       prevIndoorStates.value.set(id, indoor);
+
+      // 离开室内时清除UWB轨迹
+      if (!indoor) {
+        console.log(`设备 ${id} 离开室内，清除UWB轨迹`);
+        points.value = points.value.filter((p) => p.id !== id);
+        return; // 不再处理室外设备数据
+      }
+    } else {
+      // 如果消息中没有indoor属性，忽略该消息
+      console.log(`设备 ${id} 消息中没有indoor属性，忽略显示`);
+      return;
     }
 
-    // 仅在室内时处理坐标
-    if (indoor) {
-      const uwb = sensors?.find((s: Sensor) => s.name === "UWB");
-      if (uwb?.data?.value?.length === 2) {
-        const [x, y] = uwb.data.value;
-        const index = points.value.findIndex((p) => p.id === id);
-        
-        // 查找标签信息
-        const tagInfo = tagManagerRef.value?.getDeviceTag(String(id));
-        
-        // 如果标签不存在，自动创建一个默认标签
-        if (!tagInfo && tagManagerRef.value) {
-          // 创建默认标签
-          const newTag = {
-            id: String(id),
-            type: 'object' as 'object', // 默认为设备类型
-            label: `未命名设备-${id}`
-          };
-          
-          // 添加到标签管理器
-          tagManagerRef.value.tagList.push(newTag);
-          
-          // 更新本地标签列表
-          allTags.value = tagManagerRef.value.tagList;
-          filterTags1();
-          filterTags2();
-        }
+    // 确保只有室内设备才会继续处理
+    if (indoor !== true) {
+      console.log(`设备 ${id} 不是室内设备 (indoor=${indoor})，忽略UWB显示`);
+      return;
+    }
 
-        // 添加标签信息或更新点
-        if (index > -1) {
-          // 更新现有点，保留标签信息
-          const updatedPoint = { ...points.value[index], x, y };
-          // 如果有新标签信息，则更新
-          if (tagInfo) {
-            updatedPoint.label = tagInfo.label;
-            // 根据类型设置颜色
-            updatedPoint.color = tagInfo.type === 'person' ? '#ff6600' : '#00cc00';
-          }
-          points.value[index] = updatedPoint;
-        } else {
-          // 添加新点
-          const newPoint: TrackingPoint = { id, x, y };
-          // 如果有标签信息，则添加
-          if (tagInfo) {
-            newPoint.label = tagInfo.label;
-            // 根据类型设置颜色
-            newPoint.color = tagInfo.type === 'person' ? '#ff6600' : '#00cc00';
-          } else {
-            // 使用默认值
-            newPoint.color = '#00cc00'; // 默认为设备
-            newPoint.label = `未命名设备-${id}`;
-          }
-          points.value = [...points.value, newPoint];
-        }
+    // 处理UWB数据 - 仅在室内时显示
+    const uwb = sensors?.find((s: Sensor) => s.name === "UWB");
+    if (uwb?.data?.value?.length === 2) {
+      console.log(`处理设备 ${id} 的UWB数据`, uwb.data.value);
+      const [x, y] = uwb.data.value;
+      const index = points.value.findIndex((p) => p.id === id);
+      
+      // 查找标签信息
+      const tagInfo = tagManagerRef.value?.getDeviceTag(String(id));
+      
+      // 如果标签不存在，自动创建一个默认标签
+      if (!tagInfo && tagManagerRef.value) {
+        // 创建默认标签
+        const newTag = {
+          id: String(id),
+          type: 'object' as 'object', // 默认为设备类型
+          label: `未命名设备-${id}`
+        };
+        
+        // 添加到标签管理器
+        tagManagerRef.value.tagList.push(newTag);
+        
+        // 更新本地标签列表
+        allTags.value = tagManagerRef.value.tagList;
+        filterTags1();
+        filterTags2();
       }
+
+      // 添加标签信息或更新点
+      if (index > -1) {
+        // 更新现有点，保留标签信息
+        const updatedPoint = { ...points.value[index], x, y };
+        // 如果有新标签信息，则更新
+        if (tagInfo) {
+          updatedPoint.label = tagInfo.label;
+          // 根据类型设置颜色
+          updatedPoint.color = tagInfo.type === 'person' ? '#ff6600' : '#00cc00';
+        }
+        points.value[index] = updatedPoint;
+      } else {
+        // 添加新点
+        const newPoint: TrackingPoint = { id, x, y };
+        // 如果有标签信息，则添加
+        if (tagInfo) {
+          newPoint.label = tagInfo.label;
+          // 根据类型设置颜色
+          newPoint.color = tagInfo.type === 'person' ? '#ff6600' : '#00cc00';
+        } else {
+          // 使用默认值
+          newPoint.color = '#00cc00'; // 默认为设备
+          newPoint.label = `未命名设备-${id}`;
+        }
+        points.value = [...points.value, newPoint];
+      }
+    } else {
+      console.log(`设备 ${id} 没有有效的UWB数据，忽略显示`);
     }
   } catch (e) {
     console.warn("Invalid message format:", e);
